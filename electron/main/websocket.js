@@ -10,6 +10,25 @@ let reconnectTimer = null;
 let currentSessionId = 'tony-main';
 const listeners = new Map();  // senderId → handler
 
+// Normalize Gateway events → unified format expected by renderer VoiceButton
+function normalize(evt) {
+  // client.voice.final → category=voice, event=final
+  if (evt.type === 'client.voice.final') {
+    return {
+      type: 'runtime.event', category: 'voice', event: 'final',
+      data: { text: evt.data?.text || evt.content || evt.payload?.text || '' },
+      timestamp: evt.timestamp || new Date().toLocaleTimeString(),
+    };
+  }
+  return {
+    type: 'runtime.event',
+    category: evt.category || evt.type?.split('.')[0] || '',
+    event: evt.event || evt.type?.split('.').slice(1).join('.') || '',
+    data: evt.data || evt.payload || evt,
+    timestamp: evt.timestamp || new Date().toLocaleTimeString(),
+  };
+}
+
 function broadcast(evt) {
   listeners.forEach((fn) => { try { fn(evt); } catch {} });
 }
@@ -33,15 +52,7 @@ function connect() {
   ws.on('message', (raw) => {
     try {
       const evt = JSON.parse(raw.toString());
-      // Gateway emits: runtime.presence.changed, assistant.chunk, speech.*, etc.
-      // Map to renderer event format
-      broadcast({
-        type: 'runtime.event',
-        category: evt.category || evt.type?.split('.')[0] || '',
-        event: evt.event || evt.type?.split('.').slice(1).join('.') || '',
-        data: evt.data || evt.payload || evt,
-        timestamp: evt.timestamp || new Date().toLocaleTimeString(),
-      });
+      broadcast(normalize(evt));
     } catch {}
   });
 
