@@ -50,7 +50,8 @@ export default function VoiceButton({ sessionId, onResult, disabled }) {
 
     const unsub = API.subscribe((evt) => {
       const { category, event, data } = evt;
-      if (category === 'voice' && event === 'final') {
+      if (category === 'voice' && event === 'final'
+        && (!data?.sessionId || data.sessionId === sessionId)) {
         const text = data?.text?.trim();
         if (text && onResultRef.current) onResultRef.current(text);
       }
