@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatMessage from '../ChatMessage';
 import ChatInput from '../ChatInput';
 import RuntimeTimeline from '../runtime/RuntimeTimeline';
+import TTSPlayer from '../voice/TTSPlayer';
 import { getCurrentId, createSession, setCurrentId, addMessage, loadSession } from './SessionStore';
 
 const API = window.juliaAPI;
@@ -74,6 +75,7 @@ export default function ChatView({ sessionId }) {
         if (reply) {
           setMessages((prev) => [...prev, { role: 'julia', text: reply }]);
           if (activeSessionId) addMessage(activeSessionId, 'julia', reply);
+          TTSPlayer.speak(reply);
         }
         setPresence('idle');
       }
