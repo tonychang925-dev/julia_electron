@@ -31,6 +31,8 @@ class STTManager {
       if (this._buffer.trim() && onFinal) onFinal(this._buffer.trim());
       this._process = null;
       this._buffer = '';
+      // Continuous: auto-restart after TTS cooldown
+      if (this._onPartial) setTimeout(() => this._spawn(), 2000);
     });
 
     this._process.stderr.on('data', () => {});
