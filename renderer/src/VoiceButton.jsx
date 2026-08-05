@@ -5,14 +5,22 @@ import WebRTCVoice from './voice/WebRTCVoice';
 export default function VoiceButton({ sessionId, disabled }) {
   const [level, setLevel] = useState(0);
   const [state, setState] = useState('connecting');
+  const [errorText, setErrorText] = useState('');
 
   useEffect(() => {
     if (disabled) return;
     let disposed = false;
 
     WebRTCVoice.connect(sessionId)
-      .then(() => { if (!disposed) setState('live'); })
-      .catch(() => { if (!disposed) { WebRTCVoice.disconnect(); setState('error'); } });
+      .then(() => { if (!disposed) { setErrorText(''); setState('live'); } })
+      .catch((error) => {
+        console.error('[WebRTCVoice] connect failed:', error?.name, error?.message, error);
+        if (!disposed) {
+          WebRTCVoice.disconnect();
+          setErrorText(`${error?.name || 'Error'}: ${error?.message || 'Unknown'}`);
+          setState('error');
+        }
+      });
 
     return () => { disposed = true; WebRTCVoice.disconnect(); };
   }, [disabled, sessionId]);
@@ -20,7 +28,7 @@ export default function VoiceButton({ sessionId, disabled }) {
   const labels = {
     connecting: { color: '#FFC107', text: 'Connecting...', icon: ' ' },
     live:       { color: '#4CAF50', text: 'Ready', icon: ' ' },
-    error:      { color: '#f44336', text: 'Mic unavailable', icon: ' ' },
+    error:      { color: '#f44336', text: errorText || 'Voice connection failed', icon: '⚠️' },
   };
   const s = labels[state] || labels.connecting;
 

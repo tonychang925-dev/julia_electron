@@ -41,9 +41,7 @@ const WebRTCVoice = {
     });
     if (gen !== this._generation) { stream.getTracks().forEach((t) => t.stop()); throw new DOMException('Superseded', 'AbortError'); }
 
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-    });
+    const pc = new RTCPeerConnection({ iceServers: [] });
     pc.ontrack = (event) => {
       if (!this._audioEl) { this._audioEl = new Audio(); this._audioEl.autoplay = true; }
       this._audioEl.srcObject = event.streams[0];

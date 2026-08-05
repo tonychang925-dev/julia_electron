@@ -1,11 +1,18 @@
-const { app, BrowserWindow, globalShortcut, Tray, Menu, nativeImage, ipcMain, systemPreferences } = require('electron');
+const { app, BrowserWindow, globalShortcut, session, systemPreferences } = require('electron');
 const path = require('path');
 const { createWebSocket } = require('./main/websocket');
 const { registerIpcHandlers } = require('./main/ipc');
 const { registerWebRTC } = require('./voice/webrtc_manager');
 
 let mainWindow = null;
-let tray = null;
+
+function isTrustedOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    if (url.protocol === 'file:') return true;
+    return url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+  } catch { return false; }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -30,15 +37,22 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-app.on('ready', () => {
-  const { session } = require('electron');
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(permission === 'media');
+app.whenReady().then(async () => {
+  // Permission handlers
+  const ses = session.defaultSession;
+  ses.setPermissionCheckHandler((_wc, permission, _origin, details) => {
+    return permission === 'media' && details?.mediaType !== 'video';
   });
-  systemPreferences.askForMediaAccess('microphone');
-});
+  ses.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(permission === 'media' && isTrustedOrigin(webContents.getURL()));
+  });
 
-app.whenReady().then(() => {
+  // Mic access
+  const before = systemPreferences.getMediaAccessStatus('microphone');
+  console.log('[MIC] status before:', before);
+  const granted = before === 'granted' ? true : await systemPreferences.askForMediaAccess('microphone');
+  console.log('[MIC] permission granted:', granted);
+
   createWindow();
   createWebSocket();
   registerIpcHandlers();
