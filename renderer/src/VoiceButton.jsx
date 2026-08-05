@@ -12,7 +12,7 @@ export default function VoiceButton({ sessionId, disabled }) {
 
     WebRTCVoice.connect(sessionId)
       .then(() => { if (!disposed) setState('live'); })
-      .catch(() => { WebRTCVoice.disconnect(); if (!disposed) setState('error'); });
+      .catch(() => { if (!disposed) { WebRTCVoice.disconnect(); setState('error'); } });
 
     return () => { disposed = true; WebRTCVoice.disconnect(); };
   }, [disabled, sessionId]);
