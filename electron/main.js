@@ -2,7 +2,6 @@ const { app, BrowserWindow, globalShortcut, Tray, Menu, nativeImage, ipcMain, sy
 const path = require('path');
 const { createWebSocket } = require('./main/websocket');
 const { registerIpcHandlers } = require('./main/ipc');
-const { registerVoiceIpc } = require('./voice/voice_ipc');
 const { registerTtsIpc } = require('./voice/tts_manager');
 
 let mainWindow = null;
@@ -75,7 +74,6 @@ app.whenReady().then(() => {
   createWindow();
   createWebSocket();
   registerIpcHandlers();
-  registerWebRTC();
   registerTtsIpc();
 
   // Global shortcut: Ctrl+Shift+J toggles Julia window

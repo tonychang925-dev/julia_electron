@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatMessage from '../ChatMessage';
 import ChatInput from '../ChatInput';
 import RuntimeTimeline from '../runtime/RuntimeTimeline';
-import TTSPlayer from '../voice/TTSPlayer';
 import { getCurrentId, createSession, setCurrentId, addMessage, loadSession } from './SessionStore';
 
 const API = window.juliaAPI;
@@ -61,7 +60,6 @@ export default function ChatView({ sessionId }) {
       if (type === 'gateway.disconnected') { setOnline(false); return; }
       if (category === 'presence' && event === 'changed') {
         const state = data?.state || 'idle';
-        if (state === 'interrupted' || state === 'listening') TTSPlayer.cancel();
         setPresence(state);
         return;
       }
@@ -71,7 +69,6 @@ export default function ChatView({ sessionId }) {
         if (reply) {
           setMessages((prev) => [...prev, { role: 'julia', text: reply }]);
           if (activeSessionId) addMessage(activeSessionId, 'julia', reply);
-          TTSPlayer.speak(reply);  // voice output
         }
         setPresence('idle');
       }
