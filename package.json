@@ -1,0 +1,21 @@
+{
+  "name": "julia-desktop",
+  "version": "0.1.0",
+  "description": "Julia Desktop Shell — Electron client for Julia Core OS",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --dev\"",
+    "electron:start": "npm run build && electron ."
+  },
+  "dependencies": {
+    "electron": "^41.7.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.5",
+    "vite": "^8.2.0"
+  }
+}
