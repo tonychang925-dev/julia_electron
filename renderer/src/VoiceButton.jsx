@@ -1,18 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import VoiceLevel from './VoiceLevel';
 import WebRTCVoice from './voice/WebRTCVoice';
 
-export default function VoiceButton({ sessionId, disabled }) {
+const API = window.juliaAPI;
+
+export default function VoiceButton({ sessionId, onResult, disabled }) {
   const [level, setLevel] = useState(0);
   const [state, setState] = useState('connecting');
   const [errorText, setErrorText] = useState('');
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
 
   useEffect(() => {
     if (disabled) return;
     let disposed = false;
 
     WebRTCVoice.connect(sessionId)
-      .then(() => { if (!disposed) { setErrorText(''); setState('live'); } })
+      .then(() => {
+        if (!disposed) { setErrorText(''); setState('live'); }
+      })
       .catch((error) => {
         console.error('[WebRTCVoice] connect failed:', error?.name, error?.message, error);
         if (!disposed) {
@@ -22,7 +28,16 @@ export default function VoiceButton({ sessionId, disabled }) {
         }
       });
 
-    return () => { disposed = true; WebRTCVoice.disconnect(); };
+    // Listen for ASR transcripts from Gateway WS
+    const unsub = API.subscribe((evt) => {
+      const { category, event, data } = evt;
+      if (category === 'voice' && event === 'final') {
+        const text = data?.text?.trim();
+        if (text && onResultRef.current) onResultRef.current(text);
+      }
+    });
+
+    return () => { disposed = true; WebRTCVoice.disconnect(); unsub(); };
   }, [disabled, sessionId]);
 
   const labels = {

@@ -50,7 +50,7 @@ export default function ChatInput({ onSend, sessionId, disabled }) {
       </div>
       <div style={styles.row}>
         {voiceMode ? (
-          <VoiceButton sessionId={sessionId} disabled={disabled} />
+          <VoiceButton sessionId={sessionId} onResult={handleVoiceResult} disabled={disabled} />
         ) : (
           <>
             <input
