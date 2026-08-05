@@ -1,7 +1,14 @@
 import React, { useState, useRef } from 'react';
+import VoiceButton from './VoiceButton';
 
-export default function ChatInput({ onSend, disabled }) {
+/**
+ * ChatInput — text or voice. Toggle switches between modes.
+ * Voice mode: press-hold mic with audio level bar.
+ * Text mode: keyboard input with send button.
+ */
+export default function ChatInput({ onSend, onPresence, disabled, juliaSpeaking }) {
   const [text, setText] = useState('');
+  const [voiceMode, setVoiceMode] = useState(false);
   const inputRef = useRef(null);
 
   const handleSubmit = (e) => {
@@ -10,7 +17,6 @@ export default function ChatInput({ onSend, disabled }) {
     if (!trimmed || disabled) return;
     onSend(trimmed);
     setText('');
-    inputRef.current?.focus();
   };
 
   const handleKeyDown = (e) => {
@@ -20,30 +26,53 @@ export default function ChatInput({ onSend, disabled }) {
     }
   };
 
+  const handleVoiceResult = (result) => {
+    if (result && result !== '[voice]') {
+      onSend(result);
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit} style={styles.form}>
-      <div style={styles.row}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={disabled ? 'Julia 离线中...' : '输入消息...'}
-          disabled={disabled}
-          style={styles.input}
-          autoFocus
-        />
+      <div style={styles.toggleRow}>
         <button
-          type="submit"
-          disabled={disabled || !text.trim()}
+          type="button"
+          onClick={() => setVoiceMode(!voiceMode)}
           style={{
-            ...styles.sendBtn,
-            opacity: disabled || !text.trim() ? 0.3 : 1,
+            ...styles.toggleBtn,
+            background: voiceMode ? 'rgba(76,175,80,0.2)' : 'rgba(255,255,255,0.06)',
+            color: voiceMode ? '#4CAF50' : '#888',
           }}
+          title={voiceMode ? 'Switch to text' : 'Switch to voice'}
         >
-
+          {voiceMode ? '  Voice  ' : '  Text  '}
         </button>
+      </div>
+      <div style={styles.row}>
+        {voiceMode ? (
+          <VoiceButton onResult={handleVoiceResult} onPresence={onPresence} disabled={disabled} juliaSpeaking={juliaSpeaking} />
+        ) : (
+          <>
+            <input
+              ref={inputRef}
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={disabled ? 'Offline...' : 'Type a message...'}
+              disabled={disabled}
+              style={styles.input}
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={disabled || !text.trim()}
+              style={{ ...styles.sendBtn, opacity: disabled || !text.trim() ? 0.3 : 1 }}
+            >
+
+            </button>
+          </>
+        )}
       </div>
     </form>
   );
@@ -54,6 +83,20 @@ const styles = {
     padding: '12px 16px',
     borderTop: '1px solid rgba(255,255,255,0.08)',
     WebkitAppRegion: 'no-drag',
+  },
+  toggleRow: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    marginBottom: '6px',
+  },
+  toggleBtn: {
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    padding: '2px 8px',
+    fontSize: '10px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    transition: 'background 0.15s',
   },
   row: {
     display: 'flex',

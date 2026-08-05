@@ -7,15 +7,39 @@
     "dev": "vite",
     "build": "vite build",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --dev\"",
-    "electron:start": "npm run build && electron ."
+    "electron:start": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --mac"
   },
   "dependencies": {
-    "electron": "^41.7.1",
+    "livekit-client": "^2.21.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "ws": "^8.21.2"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.5",
-    "vite": "^8.2.0"
+    "concurrently": "^9.2.4",
+    "electron": "^41.7.1",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.2.0",
+    "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "com.julia.desktop",
+    "productName": "Julia Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "entitlements": "entitlements.mac.plist",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    }
   }
 }

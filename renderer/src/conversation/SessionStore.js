@@ -1,41 +1,63 @@
 /**
- * SessionStore — Local conversation persistence.
- * Phase E0.6: localStorage-based. No Julia Core dependency.
- *
- * Future: IndexedDB for larger histories, synced with Core Session API.
+ * SessionStore — Core-backed session persistence.
+ * E1.1: Gateway 8100 as source of truth. localStorage is cache only.
  */
 
-const STORAGE_KEY = 'julia_conversations';
+const API = 'http://127.0.0.1:8100';
 const CURRENT_KEY = 'julia_current_session';
 
-export function createSession(title = 'New Conversation') {
-  const sessions = loadSessions();
-  const session = {
-    id: `sess_${Date.now()}`,
-    title,
-    topic: '',
-    messages: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    message_count: 0,
-  };
-  sessions.unshift(session);
-  saveSessions(sessions);
-  setCurrentId(session.id);
-  return session;
-}
-
-export function loadSessions() {
+async function api(method, path, body) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(`${API}${path}`, opts);
+    if (!res.ok) throw new Error(res.statusText);
+    return res.status === 204 ? null : await res.json();
+  } catch (e) {
+    console.warn(`[SessionStore] API ${path}: ${e.message}`);
+    return null;
   }
 }
 
-export function saveSessions(sessions) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, 50)));
+const get = (p) => api('GET', p);
+const post = (p, b) => api('POST', p, b);
+const del = (p) => api('DELETE', p);
+
+// ── Public API ──
+
+export async function createSession(title = 'New Conversation') {
+  const result = await post('/sessions', { title });
+  // Gateway returns {status, session_id, ...} — normalize to {id, ...}
+  if (result && result.session_id) {
+    return { ...result, id: result.session_id };
+  }
+  return result;
+}
+
+export async function loadSessions() {
+  return await get('/sessions') || [];
+}
+
+export async function searchSessions(query) {
+  return await get(`/sessions?q=${encodeURIComponent(query)}`) || [];
+}
+
+export async function loadSession(id) {
+  if (!id || id.startsWith('local_')) return null;
+  return await get(`/sessions/${id}`);
+}
+
+export async function deleteSession(id) {
+  const ok = await del(`/sessions/${id}`);
+  if (ok && getCurrentId() === id) {
+    localStorage.removeItem(CURRENT_KEY);
+  }
+  return ok;
+}
+
+export async function addMessage(sessionId, role, text) {
+  if (!sessionId || sessionId.startsWith('local_')) return;
+  await post(`/sessions/${sessionId}/messages`, { role, content: text });
 }
 
 export function getCurrentId() {
@@ -46,31 +68,7 @@ export function setCurrentId(id) {
   localStorage.setItem(CURRENT_KEY, id);
 }
 
-export function getCurrentSession() {
+export async function getCurrentSession() {
   const id = getCurrentId();
-  const sessions = loadSessions();
-  return sessions.find((s) => s.id === id) || null;
-}
-
-export function addMessage(sessionId, role, text) {
-  const sessions = loadSessions();
-  const session = sessions.find((s) => s.id === sessionId);
-  if (!session) return;
-  session.messages.push({ role, text, timestamp: Date.now() });
-  session.message_count = session.messages.length;
-  session.updated_at = new Date().toISOString();
-  // Auto-title from first user message
-  if (role === 'user' && session.title === 'New Conversation') {
-    session.title = text.slice(0, 30) + (text.length > 30 ? '...' : '');
-  }
-  saveSessions(sessions);
-}
-
-export function updateSessionTitle(sessionId, title) {
-  const sessions = loadSessions();
-  const session = sessions.find((s) => s.id === sessionId);
-  if (session) {
-    session.title = title;
-    saveSessions(sessions);
-  }
+  return id ? await loadSession(id) : null;
 }

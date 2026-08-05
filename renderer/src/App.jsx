@@ -7,6 +7,7 @@ import MemoryPanel from './memory/MemoryPanel';
 import ToolPanel from './tools/ToolPanel';
 import WorkspacePanel from './workspace/WorkspacePanel';
 import SettingsPanel from './settings/SettingsPanel';
+import RuntimeBirthTest from './generic_client/RuntimeBirthTest';
 import { useRouter } from './app/Router';
 
 export default function App() {
@@ -35,6 +36,8 @@ export default function App() {
         return <WorkspacePanel />;
       case VIEWS.settings:
         return <SettingsPanel />;
+      case VIEWS.test:
+        return <RuntimeBirthTest />;
       default:
         return <ChatView />;
     }

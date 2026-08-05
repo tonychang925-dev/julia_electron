@@ -1,7 +1,9 @@
-const { app, BrowserWindow, globalShortcut, Tray, Menu, nativeImage, ipcMain } = require('electron');
+const { app, BrowserWindow, globalShortcut, Tray, Menu, nativeImage, ipcMain, systemPreferences } = require('electron');
 const path = require('path');
 const { createWebSocket } = require('./main/websocket');
 const { registerIpcHandlers } = require('./main/ipc');
+const { registerVoiceIpc } = require('./voice/voice_ipc');
+const { registerTtsIpc } = require('./voice/tts_manager');
 
 let mainWindow = null;
 let tray = null;
@@ -59,10 +61,22 @@ function createTray() {
   });
 }
 
+// Allow mic permission in Electron
+app.on('ready', () => {
+  const { session } = require('electron');
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(true);
+  });
+  // Request macOS mic access before renderer tries getUserMedia
+  systemPreferences.askForMediaAccess('microphone');
+});
+
 app.whenReady().then(() => {
   createWindow();
   createWebSocket();
   registerIpcHandlers();
+  registerWebRTC();
+  registerTtsIpc();
 
   // Global shortcut: Ctrl+Shift+J toggles Julia window
   globalShortcut.register('CommandOrControl+Shift+J', () => {

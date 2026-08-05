@@ -1,126 +1,172 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatMessage from '../ChatMessage';
 import ChatInput from '../ChatInput';
-import { getCurrentId, createSession, getCurrentSession, addMessage } from './SessionStore';
+import RuntimeTimeline from '../runtime/RuntimeTimeline';
+import TTSPlayer from '../voice/TTSPlayer';
+import { getCurrentId, createSession, setCurrentId, addMessage, loadSession } from './SessionStore';
 
-const JULIA = window.juliaAPI;
+const API = window.juliaAPI;
 
 /**
- * ChatView — main conversation interface with session persistence.
- * Phase E0.6: localStorage session continuity. No Core dependency.
+ * ChatView — Protocol v1 Generic Client with session persistence.
+ * Knows: user.message → runtime.event. Does NOT know Julia's identity.
+ * Session messages are saved to Core via SessionStore for auto-title.
  */
 export default function ChatView({ sessionId }) {
   const [messages, setMessages] = useState([]);
-  const [isThinking, setIsThinking] = useState(false);
-  const [isOnline, setIsOnline] = useState(false);
-  const [persona, setPersona] = useState('Julia');
+  const [presence, setPresence] = useState('idle');
+  const [online, setOnline] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState(sessionId || getCurrentId());
   const messagesEnd = useRef(null);
+  const cleanupRef = useRef(null);
 
-  // Ensure a session exists
+  // Load messages when session changes
   useEffect(() => {
-    let sid = activeSessionId || getCurrentId();
-    if (!sid) {
-      const session = createSession();
-      sid = session.id;
-    }
-    setActiveSessionId(sid);
-    // Load existing messages
-    const session = getCurrentSession();
-    if (session && session.messages) {
-      setMessages(session.messages.map((m) => ({ ...m })));
-    }
+    if (!sessionId) return;
+    setActiveSessionId(sessionId);
+    setCurrentId(sessionId);
+    (async () => {
+      const s = await loadSession(sessionId);
+      if (s?.messages?.length) {
+        setMessages(s.messages.map((m) => ({
+          role: m.role === 'assistant' ? 'julia' : m.role,
+          text: m.content || m.text || '',
+        })));
+      } else {
+        setMessages([]);
+      }
+    })();
   }, [sessionId]);
 
+  // Auto-create session if none exists
   useEffect(() => {
-    async function check() {
-      const health = await JULIA.checkHealth();
-      setIsOnline(health.online);
+    if (!sessionId && !getCurrentId()) {
+      createSession().then((s) => {
+        if (s?.id) {
+          setActiveSessionId(s.id);
+          setCurrentId(s.id);
+        }
+      });
     }
-    check();
-    const interval = setInterval(check, 15000);
-    return () => clearInterval(interval);
+  }, []);
+
+  // Subscribe to Gateway events
+  useEffect(() => {
+    const unsub = API.subscribe((evt) => {
+      const { type, category, event, data } = evt;
+      if (type === 'gateway.connected' || (category === 'runtime' && event === 'gateway.ready')) {
+        setOnline(true);
+        return;
+      }
+      if (type === 'gateway.disconnected') { setOnline(false); return; }
+      if (category === 'presence' && event === 'changed') {
+        const state = data?.state || 'idle';
+        if (state === 'interrupted' || state === 'listening') TTSPlayer.cancel();
+        setPresence(state);
+        return;
+      }
+      // E3: handle streaming chunks + full reply
+      if (category === 'conversation' && event === 'message.sent') {
+        const reply = data?.reply || '';
+        if (reply) {
+          setMessages((prev) => [...prev, { role: 'julia', text: reply }]);
+          if (activeSessionId) addMessage(activeSessionId, 'julia', reply);
+          TTSPlayer.speak(reply);  // voice output
+        }
+        setPresence('idle');
+      }
+      if (category === 'assistant' && event === 'chunk') {
+        const text = data?.text || '';
+        if (text) {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === 'julia' && !last.isFinal) {
+              return [...prev.slice(0, -1), { ...last, text: last.text + text }];
+            }
+            return [...prev, { role: 'julia', text, isFinal: false }];
+          });
+        }
+      }
+      if (category === 'assistant' && event === 'completed') {
+        setMessages((prev) => {
+          if (prev.length === 0) return prev;
+          const last = prev[prev.length - 1];
+          if (last.role === 'julia') {
+            const final = { ...last, isFinal: true };
+            if (activeSessionId) addMessage(activeSessionId, 'julia', final.text);
+            return [...prev.slice(0, -1), final];
+          }
+          return prev;
+        });
+      }
+      // E3.4: speech.* events
+      if (category === 'speech' && event === 'started') {
+        setPresence('speaking');
+      }
+      if (category === 'speech' && (event === 'completed' || event === 'cancelled')) {
+        if (event === 'cancelled') TTSPlayer.cancel();
+        setPresence('idle');
+      }
+    });
+    cleanupRef.current = unsub;
+    return () => { if (cleanupRef.current) cleanupRef.current(); };
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    API.checkHealth().then((h) => { if (h?.status === 'ok') setOnline(true); }).catch(() => {});
   }, []);
 
   useEffect(() => {
-    JULIA.onResponse((data) => {
-      setIsThinking(false);
-      setMessages((prev) => {
-        const next = [...prev, { role: 'julia', text: data.text, timestamp: data.timestamp }];
-        if (activeSessionId) addMessage(activeSessionId, 'julia', data.text);
-        return next;
-      });
-    });
-    JULIA.onError((data) => {
-      setIsThinking(false);
-      setMessages((prev) => {
-        const next = [...prev, { role: 'julia', text: `抱歉，暂时无法连接：${data.message}`, isError: true }];
-        if (activeSessionId) addMessage(activeSessionId, 'julia', data.text);
-        return next;
-      });
-    });
-    JULIA.onStatus((data) => {
-      if (data.status === 'thinking') setIsThinking(true);
-    });
-    return () => {
-      JULIA.removeAllListeners('julia:response');
-      JULIA.removeAllListeners('julia:error');
-      JULIA.removeAllListeners('julia:status');
-    };
-  }, [activeSessionId]);
-
-  useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isThinking]);
+  }, [messages]);
 
   const handleSend = useCallback((text) => {
     setMessages((prev) => [...prev, { role: 'user', text }]);
-    setIsThinking(true);
     if (activeSessionId) addMessage(activeSessionId, 'user', text);
-    JULIA.sendMessage(text);
+    API.sendMessage(text, activeSessionId);
   }, [activeSessionId]);
+
+  const handlePresence = useCallback((state) => {
+    if (state) setPresence(state);
+  }, []);
+
+  const isListening = presence === 'listening';
+  const isThinking = presence === 'thinking';
+  const phaseLabels = { recalling: '  Recalling...', reasoning: '  Reasoning...', generating: '  Generating...', speaking: '  Speaking...' };
+  const statusLabel = presence === 'interrupt' ? '  Interrupted'
+    : isListening ? '  Listening...'
+    : phaseLabels[presence] || (isThinking ? '  Thinking...' : '')
+    || (online ? '  Online' : '  Offline');
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <span style={styles.chatTitle}>Conversation</span>
-        <span style={{ fontSize: '11px', color: isOnline ? '#4CAF50' : '#f44336' }}>
-          {isOnline ? '  Online' : '  Offline'}
-        </span>
+        <span style={{ fontSize: '11px', color: online ? '#4CAF50' : '#f44336' }}>{statusLabel}</span>
       </div>
       <div style={styles.messages}>
         {messages.length === 0 && (
           <div style={styles.welcome}>
             <p style={styles.welcomeEmoji}> </p>
-            <p style={styles.welcomeText}>我是 Julia，你的个人 AI 助手。</p>
-            <p style={styles.welcomeHint}>输入文字，开始对话。</p>
+            <p style={styles.welcomeText}>Say hello.</p>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <ChatMessage key={i} {...msg} />
-        ))}
+        {messages.map((msg, i) => <ChatMessage key={i} {...msg} />)}
         {isThinking && <ChatMessage role="julia" text="..." isThinking />}
         <div ref={messagesEnd} />
       </div>
-      <ChatInput onSend={handleSend} disabled={!isOnline} />
+      <RuntimeTimeline />
+      <ChatInput onSend={handleSend} onPresence={handlePresence} disabled={!online} juliaSpeaking={presence === 'speaking'} />
     </div>
   );
 }
 
 const styles = {
   container: { height: '100%', display: 'flex', flexDirection: 'column' },
-  header: {
-    padding: '10px 16px',
-    borderBottom: '1px solid rgba(255,255,255,0.08)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    WebkitAppRegion: 'no-drag',
-  },
+  header: { padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', WebkitAppRegion: 'no-drag' },
   chatTitle: { fontSize: '13px', fontWeight: 600, color: '#aaa' },
   messages: { flex: 1, overflowY: 'auto', padding: '16px' },
   welcome: { textAlign: 'center', marginTop: '40%', opacity: 0.6 },
   welcomeEmoji: { fontSize: '48px', marginBottom: '12px' },
-  welcomeText: { fontSize: '16px', fontWeight: 500, marginBottom: '8px' },
-  welcomeHint: { fontSize: '13px', color: '#888' },
+  welcomeText: { fontSize: '16px', fontWeight: 500, color: '#ccc' },
 };

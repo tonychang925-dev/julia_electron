@@ -1,31 +1,37 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 /**
- * Preload script — exposes a safe, minimal API to the renderer process.
- * The renderer never has direct access to Node.js or Electron internals.
+ * Preload — exposes the Runtime Gateway Protocol v1 to the renderer.
+ * Renderer knows events, not Julia.
  */
 contextBridge.exposeInMainWorld('juliaAPI', {
-  // Send a message to Julia Core (via main process)
-  sendMessage: (text) => ipcRenderer.send('julia:send', { text }),
+  sendMessage: (text, sessionId) => ipcRenderer.send('julia:send', { text, sessionId: sessionId || '' }),
 
-  // Listen for Julia's streaming response
-  onResponse: (callback) => {
-    ipcRenderer.on('julia:response', (_event, data) => callback(data));
+  subscribe: (callback) => {
+    const handler = (_event, evt) => callback(evt);
+    ipcRenderer.on('julia:event', handler);
+    ipcRenderer.send('julia:subscribe-events');
+    return () => ipcRenderer.removeListener('julia:event', handler);
   },
 
-  // Listen for errors
-  onError: (callback) => {
-    ipcRenderer.on('julia:error', (_event, data) => callback(data));
-  },
-
-  // Listen for status updates (thinking, processing, done)
-  onStatus: (callback) => {
-    ipcRenderer.on('julia:status', (_event, data) => callback(data));
-  },
-
-  // Check Julia Core server health
   checkHealth: () => ipcRenderer.invoke('julia:health'),
 
-  // Remove all listeners (cleanup)
-  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+  // ── Edge TTS ──
+  ttsSpeak: (text) => ipcRenderer.invoke('tts:speak', text),
+
+  // ── Voice Capture (WebRTC + local STT) ──
+  voiceStart: () => ipcRenderer.send('voice:start'),
+  voiceStop: () => ipcRenderer.send('voice:stop'),
+  onVoiceEvent: (callback) => {
+    const handler = (_event, evt) => callback(evt);
+    ipcRenderer.on('voice:event', handler);
+    return () => ipcRenderer.removeListener('voice:event', handler);
+  },
+  // ── WebRTC ──
+  rtcSignal: (offer) => ipcRenderer.invoke('rtc:signal', offer),
+  onRTCState: (callback) => {
+    const handler = (_event, state) => callback(state);
+    ipcRenderer.on('rtc:state', handler);
+    return () => ipcRenderer.removeListener('rtc:state', handler);
+  },
 });

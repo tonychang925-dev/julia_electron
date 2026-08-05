@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   loadSessions,
   createSession,
+  deleteSession,
   getCurrentId,
   setCurrentId,
 } from './SessionStore';
@@ -14,23 +15,31 @@ export default function ConversationList({ onSelect, onNew }) {
   const [sessions, setSessions] = useState([]);
   const [currentId, setLocalCurrentId] = useState(getCurrentId());
 
-  const refresh = useCallback(() => {
-    setSessions(loadSessions());
+  const refresh = useCallback(async () => {
+    const list = await loadSessions();
+    setSessions(list || []);
     setLocalCurrentId(getCurrentId());
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const handleNew = () => {
-    const session = createSession();
-    refresh();
-    if (onNew) onNew(session.id);
+  const handleNew = async () => {
+    const session = await createSession();
+    await refresh();
+    if (onNew && session) onNew(session.id);
   };
 
   const handleSelect = (session) => {
     setCurrentId(session.id);
     setLocalCurrentId(session.id);
     if (onSelect) onSelect(session.id);
+  };
+
+  const handleDelete = async (e, session) => {
+    e.stopPropagation();
+    await deleteSession(session.id);
+    await refresh();
+    if (onSelect && currentId === session.id) onSelect(null);
   };
 
   const groups = groupByDate(sessions);
@@ -53,9 +62,18 @@ export default function ConversationList({ onSelect, onNew }) {
                   ...(s.id === currentId ? styles.itemActive : {}),
                 }}
               >
-                <div style={styles.itemTitle}>{s.title}</div>
-                <div style={styles.itemMeta}>
-                  {s.message_count} messages · {relativeTime(s.updated_at)}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={styles.itemTitle}>{s.title}</div>
+                    <div style={styles.itemMeta}>
+                      {s.message_count} messages · {relativeTime(s.updated_at)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => handleDelete(e, s)}
+                    style={styles.deleteBtn}
+                    title="Delete"
+                  > </button>
                 </div>
               </div>
             ))}
@@ -122,5 +140,10 @@ const styles = {
   itemActive: { background: 'rgba(255,255,255,0.1)' },
   itemTitle: { fontSize: '12px', color: '#ccc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   itemMeta: { fontSize: '10px', color: '#666', marginTop: '2px' },
+  deleteBtn: {
+    background: 'none', border: 'none', color: '#555', cursor: 'pointer',
+    fontSize: '12px', padding: '2px 4px', borderRadius: '4px',
+    opacity: 0, lineHeight: 1,
+  },
   empty: { padding: '16px', fontSize: '12px', color: '#555', textAlign: 'center' },
 };
