@@ -2,7 +2,6 @@ const { app, BrowserWindow, globalShortcut, session, systemPreferences } = requi
 const path = require('path');
 const { createWebSocket } = require('./main/websocket');
 const { registerIpcHandlers } = require('./main/ipc');
-const { registerVoiceIpc } = require('./voice/voice_ipc');
 const { registerWebRTC } = require('./voice/webrtc_manager');
 
 let mainWindow = null;
@@ -57,7 +56,6 @@ app.whenReady().then(async () => {
   createWindow();
   createWebSocket();
   registerIpcHandlers();
-  registerVoiceIpc();
   registerWebRTC();
 
   globalShortcut.register('CommandOrControl+Shift+J', () => {

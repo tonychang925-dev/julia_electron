@@ -130,13 +130,6 @@ function createWebSocket() {
     }
   });
 
-  // Voice events from STT → Gateway WS
-  ipcMain.on('julia:voice-event', (_event, evt) => {
-    if (evt.type === 'client.voice.final') {
-      send({ type: 'client.voice.final', content: evt.data?.text || '', session_id: currentSessionId });
-    }
-  });
-
   // Renderer can sync active session ID → WS bind
   ipcMain.on('julia:session-bind', (_event, { sessionId }) => {
     if (sessionId) {
