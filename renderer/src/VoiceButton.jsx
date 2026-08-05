@@ -18,6 +18,26 @@ export default function VoiceButton({ sessionId, onResult, disabled }) {
     WebRTCVoice.connect(sessionId)
       .then(() => {
         if (!disposed) { setErrorText(''); setState('live'); }
+        // Start local mic level monitor
+        const stream = WebRTCVoice._stream;
+        if (stream) {
+          try {
+            const ctx = new AudioContext();
+            const src = ctx.createMediaStreamSource(stream);
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 256;
+            src.connect(analyser);
+            const data = new Uint8Array(analyser.frequencyBinCount);
+            const tick = () => {
+              if (disposed) { ctx.close(); return; }
+              analyser.getByteFrequencyData(data);
+              const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length) / 255;
+              setLevel(rms);
+              requestAnimationFrame(tick);
+            };
+            tick();
+          } catch {}
+        }
       })
       .catch((error) => {
         console.error('[WebRTCVoice] connect failed:', error?.name, error?.message, error);
@@ -28,7 +48,6 @@ export default function VoiceButton({ sessionId, onResult, disabled }) {
         }
       });
 
-    // Listen for ASR transcripts from Gateway WS
     const unsub = API.subscribe((evt) => {
       const { category, event, data } = evt;
       if (category === 'voice' && event === 'final') {
