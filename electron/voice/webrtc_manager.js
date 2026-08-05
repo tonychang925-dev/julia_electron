@@ -11,31 +11,24 @@ const { ipcMain } = require('electron');
 
 const GATEWAY = 'http://127.0.0.1:8100';
 
-async function signalOffer(offer) {
+async function signalOffer({ sdp, type, sessionId }) {
   const res = await fetch(`${GATEWAY}/rtc/offer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sdp: offer.sdp, type: offer.type }),
+    body: JSON.stringify({ sdp, type, session_id: sessionId || 'tony-main' }),
   });
   if (!res.ok) throw new Error(`Gateway signal failed: ${res.status}`);
-  return await res.json(); // { sdp, type: 'answer' }
+  return res.json();
 }
 
 function registerWebRTC() {
-  // Renderer sends offer via IPC → main signals to Gateway → returns answer
   ipcMain.handle('rtc:signal', async (_event, { sdp, type, sessionId }) => {
     try {
-      const answer = await signalOffer({ sdp, type, session_id: sessionId || 'tony-main' });
+      const answer = await signalOffer({ sdp, type, sessionId });
       return { ok: true, answer };
     } catch (e) {
       return { ok: false, error: e.message };
     }
-  });
-
-  // Renderer notifies main of connection state
-  ipcMain.on('rtc:state', (_event, state) => {
-    // Forward to any renderer subscribers
-    _event.sender.send('rtc:state', state);
   });
 }
 

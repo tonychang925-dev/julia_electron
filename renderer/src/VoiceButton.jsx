@@ -1,43 +1,27 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import VoiceLevel from './VoiceLevel';
 import WebRTCVoice from './voice/WebRTCVoice';
 
 const API = window.juliaAPI;
 
-export default function VoiceButton({ onResult, disabled }) {
+export default function VoiceButton({ disabled }) {
   const [level, setLevel] = useState(0);
-  const [partialText, setPartialText] = useState('');
   const [state, setState] = useState('connecting');
-  const cleanupRef = useRef(null);
-  const onResultRef = useRef(onResult);
-  onResultRef.current = onResult;
 
   useEffect(() => {
     if (disabled) return;
+    let disposed = false;
 
-    // WebRTC mic → Gateway (AEC on localhost)
-    WebRTCVoice.connect().then((r) => { if (r?.connected) setState('live'); else setState('error'); }).catch(() => setState('error'));
+    WebRTCVoice.connect()
+      .then(() => { if (!disposed) setState('live'); })
+      .catch(() => { if (!disposed) setState('error'); });
 
-    // Local STT transcript (mac_stt.swift — macOS native, no AEC needed)
-    const unsub = API.onVoiceEvent((evt) => {
-      const { type, data } = evt;
-      if (type === 'audio.level') setLevel(data?.value || 0);
-      else if (type === 'client.voice.partial') setPartialText(data?.text || '');
-      else if (type === 'client.voice.final') {
-        const text = data?.text?.trim();
-        if (text && onResultRef.current) onResultRef.current(text);
-        setPartialText('');
-      }
-    });
-    API.voiceStart();
-
-    cleanupRef.current = unsub;
-    return () => { API.voiceStop(); WebRTCVoice.disconnect(); if (cleanupRef.current) cleanupRef.current(); };
+    return () => { disposed = true; WebRTCVoice.disconnect(); };
   }, [disabled]);
 
   const labels = {
     connecting: { color: '#FFC107', text: 'Connecting...', icon: ' ' },
-    live:       { color: '#4CAF50', text: partialText || 'Say something...', icon: ' ' },
+    live:       { color: '#4CAF50', text: 'Ready', icon: ' ' },
     error:      { color: '#f44336', text: 'Mic unavailable', icon: ' ' },
   };
   const s = labels[state] || labels.connecting;

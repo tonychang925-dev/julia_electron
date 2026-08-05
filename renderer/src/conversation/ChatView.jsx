@@ -101,7 +101,6 @@ export default function ChatView({ sessionId }) {
         setPresence('speaking');
       }
       if (category === 'speech' && (event === 'completed' || event === 'cancelled')) {
-        if (event === 'cancelled') TTSPlayer.cancel();
         setPresence('idle');
       }
     });
