@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatMessage from '../ChatMessage';
 import ChatInput from '../ChatInput';
 import RuntimeTimeline from '../runtime/RuntimeTimeline';
-import TTSPlayer from '../voice/TTSPlayer';
 import { getCurrentId, createSession, setCurrentId, addMessage, loadSession } from './SessionStore';
 
 const API = window.juliaAPI;
@@ -75,7 +74,6 @@ export default function ChatView({ sessionId }) {
         if (reply) {
           setMessages((prev) => [...prev, { role: 'julia', text: reply }]);
           if (activeSessionId) addMessage(activeSessionId, 'julia', reply);
-          TTSPlayer.speak(reply);
         }
         setPresence('idle');
       }
@@ -123,6 +121,12 @@ export default function ChatView({ sessionId }) {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Voice transcript: display only. Gateway handles the chat.
+  const handleVoiceTranscript = useCallback((text) => {
+    setMessages((prev) => [...prev, { role: 'user', text, source: 'voice' }]);
+    if (activeSessionId) addMessage(activeSessionId, 'user', text);
+  }, [activeSessionId]);
+
   const handleSend = useCallback((text) => {
     setMessages((prev) => [...prev, { role: 'user', text }]);
     if (activeSessionId) addMessage(activeSessionId, 'user', text);
@@ -159,7 +163,7 @@ export default function ChatView({ sessionId }) {
         <div ref={messagesEnd} />
       </div>
       <RuntimeTimeline />
-      <ChatInput onSend={handleSend} sessionId={activeSessionId} disabled={!online} />
+      <ChatInput onSend={handleSend} onVoiceTranscript={handleVoiceTranscript} sessionId={activeSessionId} disabled={!online} />
     </div>
   );
 }

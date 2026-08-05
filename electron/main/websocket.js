@@ -16,7 +16,10 @@ function normalize(evt) {
   if (evt.type === 'client.voice.final') {
     return {
       type: 'runtime.event', category: 'voice', event: 'final',
-      data: { text: evt.data?.text || evt.content || evt.payload?.text || '' },
+      data: {
+        text: evt.data?.text || evt.content || evt.payload?.text || '',
+        sessionId: evt.session_id || evt.data?.session_id || '',
+      },
       timestamp: evt.timestamp || new Date().toLocaleTimeString(),
     };
   }
