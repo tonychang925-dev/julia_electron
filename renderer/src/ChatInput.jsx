@@ -6,7 +6,7 @@ import VoiceButton from './VoiceButton';
  * Voice mode: press-hold mic with audio level bar.
  * Text mode: keyboard input with send button.
  */
-export default function ChatInput({ onSend, onPresence, disabled, juliaSpeaking }) {
+export default function ChatInput({ onSend, sessionId, disabled }) {
   const [text, setText] = useState('');
   const [voiceMode, setVoiceMode] = useState(false);
   const inputRef = useRef(null);
@@ -50,7 +50,7 @@ export default function ChatInput({ onSend, onPresence, disabled, juliaSpeaking 
       </div>
       <div style={styles.row}>
         {voiceMode ? (
-          <VoiceButton onResult={handleVoiceResult} onPresence={onPresence} disabled={disabled} juliaSpeaking={juliaSpeaking} />
+          <VoiceButton sessionId={sessionId} disabled={disabled} />
         ) : (
           <>
             <input

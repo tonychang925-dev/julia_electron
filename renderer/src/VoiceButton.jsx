@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import VoiceLevel from './VoiceLevel';
 import WebRTCVoice from './voice/WebRTCVoice';
 
-const API = window.juliaAPI;
-
-export default function VoiceButton({ disabled }) {
+export default function VoiceButton({ sessionId, disabled }) {
   const [level, setLevel] = useState(0);
   const [state, setState] = useState('connecting');
 
@@ -12,12 +10,12 @@ export default function VoiceButton({ disabled }) {
     if (disabled) return;
     let disposed = false;
 
-    WebRTCVoice.connect()
+    WebRTCVoice.connect(sessionId)
       .then(() => { if (!disposed) setState('live'); })
-      .catch(() => { if (!disposed) setState('error'); });
+      .catch(() => { WebRTCVoice.disconnect(); if (!disposed) setState('error'); });
 
     return () => { disposed = true; WebRTCVoice.disconnect(); };
-  }, [disabled]);
+  }, [disabled, sessionId]);
 
   const labels = {
     connecting: { color: '#FFC107', text: 'Connecting...', icon: ' ' },

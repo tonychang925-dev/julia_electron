@@ -1,57 +1,78 @@
 const API = window.juliaAPI;
 
-/**
- * WebRTCVoice — getUserMedia with AEC → RTCPeerConnection → Gateway.
- * App in /Applications + mic permission in System Settings needed.
- */
+const _wait = (pc, event, resolveCheck, timeoutMs) => {
+  if (resolveCheck(pc)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let timer = null;
+    const handler = () => {
+      try {
+        if (resolveCheck(pc)) {
+          pc.removeEventListener(event, handler);
+          if (timer) clearTimeout(timer);
+          resolve();
+        }
+      } catch {}
+    };
+    pc.addEventListener(event, handler);
+    if (timeoutMs) {
+      timer = setTimeout(() => {
+        pc.removeEventListener(event, handler);
+        reject(new Error(`${event} timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+    }
+  });
+};
+
+const _waitForIceGathering = (pc, timeoutMs = 5000) =>
+  _wait(pc, 'icegatheringstatechange', (p) => p.iceGatheringState === 'complete', timeoutMs);
+
+const _waitForConnection = (pc, timeoutMs = 10000) =>
+  _wait(pc, 'connectionstatechange', (p) => p.connectionState === 'connected', timeoutMs);
+
 const WebRTCVoice = {
   _pc: null,
   _stream: null,
   _audioEl: null,
 
-  async connect() {
-    // 1. Mic with Chromium AEC — macOS shows permission dialog on first call
+  async connect(sessionId) {
+    this.disconnect();
+
     this._stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: false,
     });
 
-    // 2. Create peer connection
     this._pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
 
-    // 3. Add mic track
     this._stream.getTracks().forEach((track) => this._pc.addTrack(track, this._stream));
 
-    // 4. Handle remote audio (TTS return)
     this._pc.ontrack = (event) => {
-      if (!this._audioEl) {
-        this._audioEl = new Audio();
-        this._audioEl.autoplay = true;
-      }
+      if (!this._audioEl) { this._audioEl = new Audio(); this._audioEl.autoplay = true; }
       this._audioEl.srcObject = event.streams[0];
     };
 
-    // 5. Create offer
     const offer = await this._pc.createOffer();
     await this._pc.setLocalDescription(offer);
+    await _waitForIceGathering(this._pc);
 
-    // 6. Signal to Gateway
-    const result = await API.rtcSignal({ sdp: offer.sdp, type: offer.type, sessionId: 'tony-main' });
+    const localDesc = this._pc.localDescription;
+    const result = await API.rtcSignal({
+      sdp: localDesc.sdp,
+      type: localDesc.type,
+      sessionId: sessionId || 'tony-main',
+    });
     if (!result.ok) throw new Error(result.error);
 
     await this._pc.setRemoteDescription(new RTCSessionDescription(result.answer));
+    await _waitForConnection(this._pc);
 
     return { connected: true };
   },
 
   disconnect() {
-    if (this._audioEl) { this._audioEl.srcObject = null; this._audioEl = null; }
+    if (this._audioEl) { this._audioEl.srcObject = null; this._audioEl.pause(); this._audioEl = null; }
     if (this._stream) { this._stream.getTracks().forEach((t) => t.stop()); this._stream = null; }
     if (this._pc) { this._pc.close(); this._pc = null; }
   },

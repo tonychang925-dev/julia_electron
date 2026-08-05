@@ -7,6 +7,7 @@ const GW_PORT = 8100;
 
 let ws = null;
 let reconnectTimer = null;
+let currentSessionId = 'tony-main';
 const listeners = new Map();  // senderId → handler
 
 function broadcast(evt) {
@@ -25,7 +26,7 @@ function connect() {
   ws.on('open', () => {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     // Bind session so Gateway links RTC audio → WS → transcripts
-    send({ type: 'session.bind', session_id: 'tony-main' });
+    send({ type: 'session.bind', session_id: currentSessionId });
     broadcast({ type: 'gateway.connected' });
   });
 
@@ -126,6 +127,14 @@ function createWebSocket() {
       event.reply('julia:event', { type: 'gateway.connected' });
     } else {
       event.reply('julia:event', { type: 'gateway.disconnected' });
+    }
+  });
+
+  // Renderer can sync active session ID → WS bind
+  ipcMain.on('julia:session-bind', (_event, { sessionId }) => {
+    if (sessionId) {
+      currentSessionId = sessionId;
+      send({ type: 'session.bind', session_id: currentSessionId });
     }
   });
 

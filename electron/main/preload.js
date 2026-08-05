@@ -16,4 +16,6 @@ contextBridge.exposeInMainWorld('juliaAPI', {
   checkHealth: () => ipcRenderer.invoke('julia:health'),
 
   rtcSignal: (offer) => ipcRenderer.invoke('rtc:signal', offer),
+
+  bindSession: (sessionId) => ipcRenderer.send('julia:session-bind', { sessionId }),
 });

@@ -37,6 +37,11 @@ export default function ChatView({ sessionId }) {
     })();
   }, [sessionId]);
 
+  // Sync WS session.bind when active session changes
+  useEffect(() => {
+    if (activeSessionId) API.bindSession(activeSessionId);
+  }, [activeSessionId]);
+
   // Auto-create session if none exists
   useEffect(() => {
     if (!sessionId && !getCurrentId()) {
@@ -152,7 +157,7 @@ export default function ChatView({ sessionId }) {
         <div ref={messagesEnd} />
       </div>
       <RuntimeTimeline />
-      <ChatInput onSend={handleSend} onPresence={handlePresence} disabled={!online} juliaSpeaking={presence === 'speaking'} />
+      <ChatInput onSend={handleSend} sessionId={activeSessionId} disabled={!online} />
     </div>
   );
 }
