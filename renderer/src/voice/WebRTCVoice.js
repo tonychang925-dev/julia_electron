@@ -41,23 +41,75 @@ const WebRTCVoice = {
     });
     if (gen !== this._generation) { stream.getTracks().forEach((t) => t.stop()); throw new DOMException('Superseded', 'AbortError'); }
 
+    // ── Verify Chromium AEC actually active ──
+    const micTrack = stream.getAudioTracks()[0];
+    const settings = micTrack.getSettings();
+    console.log('[MIC settings]', JSON.stringify(settings, null, 2));
+    if (settings.echoCancellation !== true) {
+      console.error('[AEC] Chromium echoCancellation is NOT active! Settings:', settings);
+    } else {
+      console.log('[AEC] echoCancellation confirmed active');
+    }
+
     const pc = new RTCPeerConnection({ iceServers: [] });
-    pc.ontrack = (event) => {
-      if (!this._audioEl) { this._audioEl = new Audio(); this._audioEl.autoplay = true; }
-      this._audioEl.srcObject = event.streams[0];
+
+    // ── Remote TTS audio: WebRTC remote track ONLY ──
+    pc.ontrack = async (event) => {
+      const track = event.track;
+      if (track.kind !== 'audio') return;
+
+      this._onTrackCount = (this._onTrackCount ?? 0) + 1;
+      console.log('[RTC_RX_AUDIO]', {
+        trackId: track.id, readyState: track.readyState, muted: track.muted,
+        streamCount: event.streams.length, onTrackCount: this._onTrackCount,
+      });
+
+      if (!this._audioEl) {
+        this._audioEl = new Audio();
+        this._audioEl.autoplay = true;
+        this._audioEl.playsInline = true;
+        this._audioEl.muted = false;
+        this._audioEl.volume = 1;
+      }
+
+      // Only rebind if track not already connected
+      const currentTracks = this._audioEl.srcObject instanceof MediaStream
+        ? this._audioEl.srcObject.getAudioTracks() : [];
+      if (!currentTracks.some((t) => t.id === track.id)) {
+        const stream = event.streams[0] ?? new MediaStream([track]);
+        this._audioEl.srcObject = stream;
+      }
+
+      if (this._audioEl.paused) {
+        try {
+          await this._audioEl.play();
+          console.log('[RTC_AUDIO_PLAYING]', track.id);
+        } catch (error) {
+          console.error('[RTC_AUDIO_PLAY_FAILED]', error);
+        }
+      }
     };
 
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-
-    // Local refs only if still current generation
-    if (gen !== this._generation) { pc.close(); stream.getTracks().forEach((t) => t.stop()); throw new DOMException('Superseded', 'AbortError'); }
     this._stream = stream;
+
+    if (gen !== this._generation) { pc.close(); stream.getTracks().forEach((t) => t.stop()); throw new DOMException('Superseded', 'AbortError'); }
     this._pc = pc;
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await _waitForIceGathering(pc);
     if (gen !== this._generation) throw new DOMException('Superseded', 'AbortError');
+
+    // ── Log transceiver table before signaling ──
+    console.table(pc.getTransceivers().map((tr) => ({
+      mid: tr.mid,
+      direction: tr.direction,
+      currentDirection: tr.currentDirection,
+      sender: tr.sender?.track?.kind ?? null,
+      receiver: tr.receiver?.track?.kind ?? null,
+      receiverState: tr.receiver?.track?.readyState ?? null,
+    })));
 
     const localDesc = pc.localDescription;
     const result = await API.rtcSignal({
@@ -69,6 +121,16 @@ const WebRTCVoice = {
     await pc.setRemoteDescription(new RTCSessionDescription(result.answer));
     await _waitForConnection(pc);
     if (gen !== this._generation) throw new DOMException('Superseded', 'AbortError');
+
+    // ── Log post-connect transceiver state ──
+    console.table(pc.getTransceivers().map((tr) => ({
+      mid: tr.mid,
+      direction: tr.direction,
+      currentDirection: tr.currentDirection,
+      sender: tr.sender?.track?.kind ?? null,
+      receiver: tr.receiver?.track?.kind ?? null,
+      receiverState: tr.receiver?.track?.readyState ?? null,
+    })));
 
     return { connected: true };
   },
