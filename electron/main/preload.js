@@ -18,4 +18,12 @@ contextBridge.exposeInMainWorld('juliaAPI', {
   rtcSignal: (offer) => ipcRenderer.invoke('rtc:signal', offer),
 
   bindSession: (sessionId) => ipcRenderer.send('julia:session-bind', { sessionId }),
+
+  voiceStart: () => ipcRenderer.send('voice:start'),
+  voiceStop: () => ipcRenderer.send('voice:stop'),
+  onVoiceEvent: (callback) => {
+    const handler = (_event, evt) => callback(evt);
+    ipcRenderer.on('voice:event', handler);
+    return () => ipcRenderer.removeListener('voice:event', handler);
+  },
 });

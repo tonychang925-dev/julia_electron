@@ -56,7 +56,17 @@ export default function VoiceButton({ sessionId, onResult, disabled }) {
       }
     });
 
-    return () => { disposed = true; WebRTCVoice.disconnect(); unsub(); };
+    // Start STT for immediate transcripts (local, already has mic permission)
+    API.voiceStart();
+    const voiceUnsub = API.onVoiceEvent((evt) => {
+      if (evt.type === 'audio.level') setLevel(evt.data?.value || 0);
+      else if (evt.type === 'client.voice.final') {
+        const text = evt.data?.text?.trim();
+        if (text && onResultRef.current) onResultRef.current(text);
+      }
+    });
+
+    return () => { disposed = true; WebRTCVoice.disconnect(); API.voiceStop(); unsub(); voiceUnsub(); };
   }, [disabled, sessionId]);
 
   const labels = {
