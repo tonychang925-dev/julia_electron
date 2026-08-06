@@ -1,7 +1,13 @@
-/** Voice Engine Client — WSS to AutoDL HF speech-to-speech (OpenAI Realtime API).
-
+/** Voice Engine Client — WSS to AutoDL Julia Voice Gateway (julia-realtime.v1).
+ *
  *  Protocol: JSON frames. Mic PCM16 → base64 → input_audio_buffer.append.
  *  Server → response.output_audio.delta → PCM16 decode → AudioContext playback.
+ *
+ *  P0 fixes (review 46e9622):
+ *    - Restore onTranscript / onAudioLevel callbacks
+ *    - Track local playback lifecycle; listening only after last source ends
+ *    - Half-duplex: suppress mic upload during Julia speaking
+ *    - Barge-in: cancel local + remote on speech_started during speaking
  */
 
 const VOICE_ENGINE_URL = 'ws://127.0.0.1:8765/v1/realtime';
@@ -14,11 +20,20 @@ const VoiceEngineClient = {
   _audioCtx: null,
   _state: 'disconnected',
   _onState: null,
+  _onTranscript: null,
+  _onAudioLevel: null,
   _nextPlayTime: 0,
   _outputSampleRate: 24000,
+  _playingSources: new Set(),
+  _pendingAudioDone: false,
 
-  async connect({ onState } = {}) {
+  async connect({ onState, onTranscript, onAudioLevel } = {}) {
+    // Re-entry guard
+    if (this._state !== 'disconnected' && this._state !== 'error') return;
+
     this._onState = onState;
+    this._onTranscript = onTranscript;
+    this._onAudioLevel = onAudioLevel;
     this._setState('connecting');
     log('VE_CONNECTING');
 
@@ -32,7 +47,16 @@ const VoiceEngineClient = {
       log('VE_MIC', { sr: settings.sampleRate, aec: settings.echoCancellation });
 
       this._audioCtx = new AudioContext({ sampleRate: this._outputSampleRate });
+      await this._audioCtx.resume();
+      log('VE_AUDIO_CTX', { state: this._audioCtx.state, sampleRate: this._audioCtx.sampleRate });
+
+      if (this._audioCtx.sampleRate !== this._outputSampleRate) {
+        log('VE_SR_MISMATCH', `expected ${this._outputSampleRate} got ${this._audioCtx.sampleRate}`);
+      }
+
       this._nextPlayTime = 0;
+      this._playingSources = new Set();
+      this._pendingAudioDone = false;
 
       this._ws = new WebSocket(VOICE_ENGINE_URL);
 
@@ -45,7 +69,6 @@ const VoiceEngineClient = {
       this._ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          log('VE_RX', { type: msg.type, deltaBytes: msg.delta?.length || 0 });
           this._handleMessage(msg);
         } catch (e) {
           log('VE_PARSE_ERROR', String(event.data).slice(0, 200));
@@ -53,10 +76,11 @@ const VoiceEngineClient = {
       };
 
       this._ws.onclose = () => { this._setState('disconnected'); log('VE_DISCONNECTED'); this._cleanup(); };
-      this._ws.onerror = (e) => { log('VE_SOCKET_ERROR', e?.message || 'WebSocket error'); this._setState('error'); };
+      this._ws.onerror = (e) => { log('VE_SOCKET_ERROR', e?.message || 'WebSocket error'); this._setState('error'); this._cleanup(); };
 
     } catch (e) {
       log('VE_ERROR', e.message);
+      this._cleanup();
       this._setState('error');
     }
   },
@@ -68,21 +92,36 @@ const VoiceEngineClient = {
         break;
       case 'input_audio_buffer.speech_started':
         this._setState('user_speaking');
+        // Barge-in: cancel local playback + remote turn
+        this._cancelLocalPlayback();
+        if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+          this._ws.send(JSON.stringify({ type: 'response.cancel' }));
+        }
         break;
       case 'input_audio_buffer.speech_stopped':
         break;
       case 'conversation.item.input_audio_transcription.completed':
         log('VE_TRANSCRIPT', msg.transcript);
+        if (this._onTranscript) this._onTranscript(msg.transcript, true);
+        break;
+      case 'response.text.delta':
+        // Julia's reply text for UI display
+        if (this._onTranscript && msg.delta) {
+          this._onTranscript(msg.delta, true);
+        }
         break;
       case 'response.output_audio.delta':
         this._setState('speaking');
         this._playPcm16(msg.delta);
         break;
       case 'response.output_audio.done':
-        this._setState('listening');
+        // Mark pending — actual listening happens when all sources end
+        this._pendingAudioDone = true;
+        this._checkPlaybackDone();
         break;
       case 'response.done':
-        this._setState('listening');
+        this._pendingAudioDone = true;
+        this._checkPlaybackDone();
         break;
       case 'error':
         log('VE_SERVER_ERROR', msg.error?.message || JSON.stringify(msg.error));
@@ -96,8 +135,21 @@ const VoiceEngineClient = {
     const source = this._audioCtx.createMediaStreamSource(this._stream);
     const processor = this._audioCtx.createScriptProcessor(4096, 1, 1);
     processor.onaudioprocess = (e) => {
+      // Half-duplex guard: suppress mic upload while Julia is speaking
+      if (this._state === 'speaking') return;
+
       if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
+
       const input = e.inputBuffer.getChannelData(0);
+
+      // Audio level (RMS) for UI
+      if (this._onAudioLevel) {
+        let sum = 0;
+        for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+        const rms = Math.sqrt(sum / input.length);
+        this._onAudioLevel(Math.min(1, rms * 5)); // scale up for visual
+      }
+
       const pcm = new Int16Array(input.length);
       for (let i = 0; i < input.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
       const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)));
@@ -132,8 +184,30 @@ const VoiceEngineClient = {
       const startAt = Math.max(now + 0.02, this._nextPlayTime);
       source.start(startAt);
       this._nextPlayTime = startAt + buffer.duration;
+
+      // Track source for lifecycle
+      this._playingSources.add(source);
+      source.onended = () => {
+        this._playingSources.delete(source);
+        this._checkPlaybackDone();
+      };
     } catch (e) {
       log('VE_PCM_ERROR', e.message);
+    }
+  },
+
+  _cancelLocalPlayback() {
+    for (const source of this._playingSources) {
+      try { source.stop(); } catch (e) { /* already stopped */ }
+    }
+    this._playingSources.clear();
+    this._nextPlayTime = this._audioCtx ? this._audioCtx.currentTime : 0;
+  },
+
+  _checkPlaybackDone() {
+    if (this._pendingAudioDone && this._playingSources.size === 0) {
+      this._pendingAudioDone = false;
+      this._setState('listening');
     }
   },
 
@@ -143,10 +217,12 @@ const VoiceEngineClient = {
   },
 
   _cleanup() {
+    this._cancelLocalPlayback();
     if (this._ws) { this._ws.close(); this._ws = null; }
     if (this._stream) { this._stream.getTracks().forEach(t => t.stop()); this._stream = null; }
     if (this._audioCtx) { this._audioCtx.close(); this._audioCtx = null; }
     this._nextPlayTime = 0;
+    this._pendingAudioDone = false;
   },
 
   _setState(state) {

@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import VoiceLevel from './VoiceLevel';
 import VoiceEngineClient from './voice/VoiceEngineClient';
 
-export default function VoiceButton({ sessionId, disabled }) {
+export default function VoiceButton({ sessionId, disabled, onTranscript }) {
   const [level, setLevel] = useState(0);
   const [state, setState] = useState('disconnected');
   const [transcript, setTranscript] = useState('');
   const [errorText, setErrorText] = useState('');
   const onTranscriptRef = useRef(null);
+  onTranscriptRef.current = onTranscript;
 
   useEffect(() => {
     if (disabled) return;
@@ -40,6 +41,7 @@ export default function VoiceButton({ sessionId, disabled }) {
     disconnected: { color: '#888', text: 'Start Voice', icon: ' ' },
     connecting: { color: '#FFC107', text: 'Connecting...', icon: ' ' },
     listening: { color: '#4CAF50', text: transcript || 'Listening...', icon: ' ' },
+    user_speaking: { color: '#FF9800', text: 'You are speaking...', icon: '🎙️' },
     speaking: { color: '#2196F3', text: 'Julia speaking...', icon: ' ' },
     error: { color: '#f44336', text: errorText || 'Error', icon: '⚠️' },
   };
