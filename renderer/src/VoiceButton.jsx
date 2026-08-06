@@ -1,64 +1,48 @@
-import React, { useState, useEffect, useRef } from 'react';
-import VoiceLevel from './VoiceLevel';
+import React, { useState } from 'react';
 import LiveKitVoice from './voice/LiveKitVoice';
 
-export default function VoiceButton({ sessionId, disabled }) {
-  const [level, setLevel] = useState(0);
-  const [state, setState] = useState('connecting');
-  const [errorText, setErrorText] = useState('');
+export default function VoiceButton() {
+  const [state, setState] = useState('idle');
 
-  useEffect(() => {
-    if (disabled) return;
-    let disposed = false;
+  const handleClick = async () => {
+    if (state === 'live') return;
+    setState('connecting');
 
-    LiveKitVoice.connect({
-      onState: (s) => {
-        if (!disposed) {
-          if (s === 'connected' || s === 'live') { setErrorText(''); setState('live'); }
-          else if (s === 'error') setState('error');
-          else setState('connecting');
-        }
-      },
-    }).catch((error) => {
-      if (!disposed) {
-        setErrorText(error?.message || 'Unknown');
-        setState('error');
-      }
-    });
-
-    return () => { disposed = true; LiveKitVoice.disconnect(); };
-  }, [disabled]);
-
-  const labels = {
-    connecting: { color: '#FFC107', text: 'Connecting...', icon: ' ' },
-    live:       { color: '#4CAF50', text: 'Ready', icon: ' ' },
-    error:      { color: '#f44336', text: errorText || 'Voice connection failed', icon: '⚠️' },
-  };
-  const s = labels[state] || labels.connecting;
-
-  const handleClick = () => {
-    if (state === 'live') {
-      LiveKitVoice.startAudio().catch(() => {});
+    try {
+      await LiveKitVoice.connect({
+        onState: (s) => { if (s === 'connected' || s === 'live') setState('live'); },
+      });
+      // Must be called from click event — Chromium autoplay requirement
+      await LiveKitVoice.startAudio();
+    } catch (e) {
+      setState('error');
     }
   };
 
+  const s = {
+    idle:   { color: '#4CAF50', text: 'Start Voice', icon: ' ' },
+    connecting: { color: '#FFC107', text: 'Connecting...', icon: ' ' },
+    live:   { color: '#4CAF50', text: 'Connected — listening for test phrase...', icon: ' ' },
+    error:  { color: '#f44336', text: 'Connection failed', icon: '⚠️' },
+  }[state];
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-      <VoiceLevel level={level} active={state === 'live'} />
       <button
         onClick={handleClick}
+        disabled={state === 'connecting'}
         style={{
           width: '44px', height: '44px', borderRadius: '50%',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: state === 'connecting' ? 'default' : 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
           border: `2px solid ${s.color}`, background: 'rgba(255,255,255,0.06)',
-          flexShrink: 0,
+          flexShrink: 0, opacity: state === 'connecting' ? 0.5 : 1,
         }}
       >
         <span style={{ fontSize: '22px', lineHeight: 1 }}>{s.icon}</span>
       </button>
-      <div style={{ fontSize: '12px', fontWeight: 500, color: s.color, minWidth: '120px' }}>
+      <div style={{ fontSize: '12px', fontWeight: 500, color: s.color, minWidth: '180px' }}>
         {s.text}
-        {state === 'live' && <span style={{ display: 'block', fontSize: '10px', color: '#888' }}>click to enable audio</span>}
       </div>
     </div>
   );
