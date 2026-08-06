@@ -1,64 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
 import VoiceLevel from './VoiceLevel';
-import WebRTCVoice from './voice/WebRTCVoice';
+import LiveKitVoice from './voice/LiveKitVoice';
 
-const API = window.juliaAPI;
-
-export default function VoiceButton({ sessionId, onResult, disabled }) {
+export default function VoiceButton({ sessionId, disabled }) {
   const [level, setLevel] = useState(0);
   const [state, setState] = useState('connecting');
   const [errorText, setErrorText] = useState('');
-  const onResultRef = useRef(onResult);
-  onResultRef.current = onResult;
 
   useEffect(() => {
     if (disabled) return;
     let disposed = false;
 
-    WebRTCVoice.connect(sessionId)
-      .then(() => {
-        if (!disposed) { setErrorText(''); setState('live'); }
-        // Start local mic level monitor
-        const stream = WebRTCVoice._stream;
-        if (stream) {
-          try {
-            const ctx = new AudioContext();
-            const src = ctx.createMediaStreamSource(stream);
-            const analyser = ctx.createAnalyser();
-            analyser.fftSize = 256;
-            src.connect(analyser);
-            const data = new Uint8Array(analyser.frequencyBinCount);
-            const tick = () => {
-              if (disposed) { ctx.close(); return; }
-              analyser.getByteFrequencyData(data);
-              const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length) / 255;
-              setLevel(rms);
-              requestAnimationFrame(tick);
-            };
-            tick();
-          } catch {}
-        }
-      })
-      .catch((error) => {
-        console.error('[WebRTCVoice] connect failed:', error?.name, error?.message, error);
+    LiveKitVoice.connect({
+      onState: (s) => {
         if (!disposed) {
-          WebRTCVoice.disconnect();
-          setErrorText(`${error?.name || 'Error'}: ${error?.message || 'Unknown'}`);
-          setState('error');
+          if (s === 'connected' || s === 'live') { setErrorText(''); setState('live'); }
+          else if (s === 'error') setState('error');
+          else setState('connecting');
         }
-      });
-
-    const unsub = API.subscribe((evt) => {
-      const { category, event, data } = evt;
-      if (category === 'voice' && event === 'final'
-        && (!data?.sessionId || data.sessionId === sessionId)) {
-        const text = data?.text?.trim();
-        if (text && onResultRef.current) onResultRef.current(text);
+      },
+    }).catch((error) => {
+      if (!disposed) {
+        setErrorText(error?.message || 'Unknown');
+        setState('error');
       }
     });
 
-    return () => { disposed = true; WebRTCVoice.disconnect(); unsub(); };
-  }, [disabled, sessionId]);
+    return () => { disposed = true; LiveKitVoice.disconnect(); };
+  }, [disabled]);
 
   const labels = {
     connecting: { color: '#FFC107', text: 'Connecting...', icon: ' ' },
