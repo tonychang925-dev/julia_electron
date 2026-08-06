@@ -46,8 +46,23 @@ const LiveKitVoice = {
       room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
         if (track.kind === 'audio') {
           log('LK_AUDIO_TRACK_SUBSCRIBED', participant.identity);
-          track.attach();
-          log('LK_AUDIO_ATTACHED');
+          const el = track.attach();
+          el.muted = false;
+          el.autoplay = true;
+          el.playsInline = true;
+          el.setAttribute('data-track-sid', track.sid);
+          document.body.appendChild(el);
+          this._audioElements = this._audioElements || new Map();
+          this._audioElements.set(track.sid, el);
+          log('LK_AUDIO_ATTACHED', track.sid);
+        }
+      });
+
+      room.on(RoomEvent.TrackUnsubscribed, (track) => {
+        if (this._audioElements) {
+          const el = this._audioElements.get(track.sid);
+          if (el) { el.remove(); el.srcObject = null; }
+          this._audioElements.delete(track.sid);
         }
       });
 
@@ -73,6 +88,10 @@ const LiveKitVoice = {
   },
 
   disconnect() {
+    if (this._audioElements) {
+      this._audioElements.forEach((el) => { el.remove(); el.srcObject = null; });
+      this._audioElements.clear();
+    }
     if (this._room) {
       this._room.disconnect();
       this._room = null;
