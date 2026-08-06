@@ -3,7 +3,7 @@
  *  Electron mic → LiveKit → Agent → remote audio → Electron speaker.
  *  No RTCPeerConnection, no SDP, no /rtc/offer, no custom audio pipeline.
  */
-import { Room, RoomEvent, RemoteTrackPublication } from 'livekit-client';
+import { Room, RoomEvent } from 'livekit-client';
 
 const ROOM = 'julia-voice-v2-1';
 const IDENTITY = 'tony-electron';
@@ -14,23 +14,21 @@ const LiveKitVoice = {
   _room: null,
   _state: 'disconnected',
   _onState: null,
-  _onTranscript: null,
+  _audioElements: null,
 
-  async connect({ onState, onTranscript } = {}) {
+  async connect({ onState } = {}) {
     this._onState = onState;
-    this._onTranscript = onTranscript;
     this._setState('connecting');
     log('LK_ROOM_CONNECTING');
 
     try {
-      // Get token from Gateway
       const resp = await fetch(`http://127.0.0.1:8100/livekit/token?room=${ROOM}&identity=${IDENTITY}`);
       const { url, token } = await resp.json();
       if (!token) throw new Error('No token from Gateway');
 
-      // Connect to LiveKit room
       const room = new Room();
       this._room = room;
+      this._audioElements = new Map();
 
       room.on(RoomEvent.Connected, () => {
         log('LK_ROOM_CONNECTED');
@@ -42,41 +40,58 @@ const LiveKitVoice = {
         this._setState('disconnected');
       });
 
-      // Handle incoming tracks
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        log('LK_AUDIO_PLAYBACK_STATUS', {
+          canPlaybackAudio: room.canPlaybackAudio,
+        });
+      });
+
       room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-        if (track.kind === 'audio') {
-          log('LK_AUDIO_TRACK_SUBSCRIBED', participant.identity);
-          const el = track.attach();
-          el.muted = false;
-          el.autoplay = true;
-          el.playsInline = true;
-          el.setAttribute('data-track-sid', track.sid);
-          document.body.appendChild(el);
-          this._audioElements = this._audioElements || new Map();
-          this._audioElements.set(track.sid, el);
-          log('LK_AUDIO_ATTACHED', track.sid);
-        }
+        if (track.kind !== 'audio') return;
+
+        const sid = pub.trackSid || track.sid;
+        log('LK_AUDIO_TRACK_SUBSCRIBED', { participant: participant.identity, sid });
+
+        const el = track.attach();
+        el.muted = false;
+        el.autoplay = true;
+        el.playsInline = true;
+        el.setAttribute('data-track-sid', sid);
+
+        el.onplaying = () => log('LK_AUDIO_PLAYING', sid);
+        el.onpause = () => log('LK_AUDIO_PAUSED', sid);
+        el.onerror = () => log('LK_AUDIO_ELEMENT_ERROR', el.error);
+
+        el.play()
+          .then(() => log('LK_AUDIO_PLAY_OK', sid))
+          .catch((e) => {
+            log('LK_AUDIO_PLAY_BLOCKED', {
+              name: e?.name, message: e?.message,
+              canPlaybackAudio: room.canPlaybackAudio,
+            });
+          });
+
+        document.body.appendChild(el);
+        this._audioElements.set(sid, { track, element: el });
+        log('LK_AUDIO_ATTACHED', {
+          sid,
+          canPlaybackAudio: room.canPlaybackAudio,
+        });
       });
 
-      room.on(RoomEvent.TrackUnsubscribed, (track) => {
-        if (this._audioElements) {
-          const el = this._audioElements.get(track.sid);
-          if (el) { el.remove(); el.srcObject = null; }
-          this._audioElements.delete(track.sid);
+      room.on(RoomEvent.TrackUnsubscribed, (track, _pub) => {
+        const sid = track.sid;
+        const item = this._audioElements?.get(sid);
+        if (item) {
+          try { item.track.detach(item.element); } catch {}
+          item.element.remove();
+          this._audioElements.delete(sid);
+          log('LK_AUDIO_DETACHED', sid);
         }
-      });
-
-      // Handle data/transcript messages
-      room.on(RoomEvent.DataReceived, (payload, participant) => {
-        try {
-          const text = new TextDecoder().decode(payload);
-          log('LK_DATA', text);
-        } catch {}
       });
 
       await room.connect(url, token);
 
-      // Enable microphone
       await room.localParticipant.setMicrophoneEnabled(true);
       log('LK_MIC_ENABLED');
       this._setState('live');
@@ -87,9 +102,20 @@ const LiveKitVoice = {
     }
   },
 
+  async startAudio() {
+    if (!this._room) return;
+    await this._room.startAudio();
+    log('LK_AUDIO_START_OK', {
+      canPlaybackAudio: this._room.canPlaybackAudio,
+    });
+  },
+
   disconnect() {
     if (this._audioElements) {
-      this._audioElements.forEach((el) => { el.remove(); el.srcObject = null; });
+      this._audioElements.forEach(({ track, element }) => {
+        try { track.detach(element); } catch {}
+        element.remove();
+      });
       this._audioElements.clear();
     }
     if (this._room) {

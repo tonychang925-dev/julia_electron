@@ -36,10 +36,18 @@ export default function VoiceButton({ sessionId, disabled }) {
   };
   const s = labels[state] || labels.connecting;
 
+  const handleClick = () => {
+    if (state === 'live') {
+      LiveKitVoice.startAudio().catch(() => {});
+    }
+  };
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
       <VoiceLevel level={level} active={state === 'live'} />
-      <span style={{ fontSize: '22px' }}>{s.icon}</span>
+      <button onClick={handleClick} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <span style={{ fontSize: '22px' }}>{s.icon}</span>
+      </button>
       <div style={{ fontSize: '12px', fontWeight: 500, color: s.color, minWidth: '100px' }}>{s.text}</div>
     </div>
   );
