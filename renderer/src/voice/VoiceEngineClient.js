@@ -22,18 +22,23 @@ const VoiceEngineClient = {
   _onState: null,
   _onTranscript: null,
   _onAudioLevel: null,
+  _onResponseText: null,
   _nextPlayTime: 0,
   _outputSampleRate: 24000,
   _playingSources: new Set(),
   _pendingAudioDone: false,
 
-  async connect({ onState, onTranscript, onAudioLevel } = {}) {
-    // Re-entry guard
-    if (this._state !== 'disconnected' && this._state !== 'error') return;
+  async connect({ onState, onTranscript, onAudioLevel, onResponseText } = {}) {
+    // Re-entry guard: prevent double connection
+    if (this._state === 'connecting' || this._state === 'listening' || this._state === 'speaking') {
+      log('VE_SKIP_DUP', this._state);
+      return;
+    }
 
     this._onState = onState;
     this._onTranscript = onTranscript;
     this._onAudioLevel = onAudioLevel;
+    this._onResponseText = onResponseText;
     this._setState('connecting');
     log('VE_CONNECTING');
 
@@ -105,10 +110,8 @@ const VoiceEngineClient = {
         if (this._onTranscript) this._onTranscript(msg.transcript, true);
         break;
       case 'response.text.delta':
-        // Julia's reply text for UI display
-        if (this._onTranscript && msg.delta) {
-          this._onTranscript(msg.delta, true);
-        }
+        // Julia reply → ChatView
+        if (this._onResponseText) this._onResponseText(msg.delta);
         break;
       case 'response.output_audio.delta':
         this._setState('speaking');

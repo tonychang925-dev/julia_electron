@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import VoiceLevel from './VoiceLevel';
 import VoiceEngineClient from './voice/VoiceEngineClient';
 
-export default function VoiceButton({ sessionId, disabled, onTranscript }) {
+export default function VoiceButton({ sessionId, disabled, onTranscript, onResponseText }) {
   const [level, setLevel] = useState(0);
   const [state, setState] = useState('disconnected');
   const [transcript, setTranscript] = useState('');
@@ -26,6 +26,9 @@ export default function VoiceButton({ sessionId, disabled, onTranscript }) {
         if (disposed) return;
         if (isFinal) { setTranscript(''); if (onTranscriptRef.current) onTranscriptRef.current(text); }
         else setTranscript(text);
+      },
+      onResponseText: (text) => {
+        if (!disposed && onResponseText) onResponseText(text);
       },
       onAudioLevel: (rms) => {
         if (!disposed) setLevel(rms);
@@ -57,7 +60,12 @@ export default function VoiceButton({ sessionId, disabled, onTranscript }) {
         border: `2px solid ${s.color}`, background: 'rgba(255,255,255,0.06)',
         flexShrink: 0, opacity: state === 'connecting' ? 0.5 : 1,
       }}
-      onClick={() => { if (state === 'disconnected') { setState('connecting'); VoiceEngineClient.connect({ onState: (s) => { if (s === 'listening') setState('listening'); if (s === 'error') setState('error'); }, onTranscript: (t) => setTranscript(t || ''), onAudioLevel: (r) => setLevel(r) }).catch(() => setState('error')); } }}
+      onClick={() => {
+        if (state === 'disconnected' || state === 'error') {
+          VoiceEngineClient.disconnect();
+          setState('connecting');
+        }
+      }}
       >
         <span style={{ fontSize: '22px', lineHeight: 1 }}>{s.icon}</span>
       </div>
