@@ -138,9 +138,7 @@ const VoiceEngineClient = {
     const source = this._audioCtx.createMediaStreamSource(this._stream);
     const processor = this._audioCtx.createScriptProcessor(4096, 1, 1);
     processor.onaudioprocess = (e) => {
-      // Half-duplex guard: suppress mic upload while Julia is speaking
-      if (this._state === 'speaking') return;
-
+      // Full-duplex: always send mic audio
       if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
 
       const input = e.inputBuffer.getChannelData(0);
@@ -159,8 +157,11 @@ const VoiceEngineClient = {
       this._ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
     };
     source.connect(processor);
-    processor.connect(this._audioCtx.destination);
-    log('VE_MIC_STREAMING');
+    const pad = this._audioCtx.createGain();
+    pad.gain.value = 0.001;
+    processor.connect(pad);
+    pad.connect(this._audioCtx.destination);
+    log('VE_MIC_STREAMING', { aec: true, pad: '0.001' });
   },
 
   /** Decode PCM16 base64 → Float32 → AudioBuffer → schedule playback. */
