@@ -171,10 +171,10 @@ const VoiceEngineClient = {
     };
     source.connect(processor);
     const pad = this._audioCtx.createGain();
-    pad.gain.value = 0.001;
+    pad.gain.value = 0;
     processor.connect(pad);
     pad.connect(this._audioCtx.destination);
-    log('VE_MIC_STREAMING', { aec: true, pad: '0.001' });
+    log('VE_MIC_STREAMING', { aec: true, pad: '0' });
   },
 
   /** Decode PCM16 base64 → Float32 → AudioBuffer → schedule playback. */
