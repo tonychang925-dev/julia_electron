@@ -24,7 +24,7 @@ const VoiceEngineClient = {
   _onAudioLevel: null,
   _onResponseText: null,
   _nextPlayTime: 0,
-  _outputSampleRate: 24000,
+  _outputSampleRate: 16000,
   _playingSources: new Set(),
   _pendingAudioDone: false,
 
@@ -66,19 +66,18 @@ const VoiceEngineClient = {
       this._ws = new WebSocket(VOICE_ENGINE_URL);
 
       this._ws.onopen = () => {
-        this._setState('listening');
         log('VE_CONNECTED');
-        // P0-1: Declare audio contract — input 24kHz, output 24kHz
+        // Send session.update, wait for session.updated before mic
         this._ws.send(JSON.stringify({
           type: 'session.update',
           session: {
-            input_audio_format: 'pcm16',
-            input_audio_rate: this._outputSampleRate,
-            output_audio_format: 'pcm16',
-            output_audio_rate: this._outputSampleRate,
+            type: 'realtime',
+            audio: {
+              input: { turn_detection: { type: 'server_vad', interrupt_response: true } },
+              output: {},
+            },
           },
         }));
-        this._startMicStream();
       };
 
       this._ws.onmessage = (event) => {
@@ -104,6 +103,10 @@ const VoiceEngineClient = {
     switch (msg.type) {
       case 'session.created':
         log('VE_SESSION', msg.session?.id || 'ok');
+        break;
+      case 'session.updated':
+        this._setState('listening');
+        this._startMicStream();
         break;
       case 'input_audio_buffer.speech_started':
         this._setState('user_speaking');
