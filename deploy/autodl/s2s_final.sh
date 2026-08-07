@@ -1,7 +1,13 @@
 #!/bin/bash
+# Julia Voice — AutoDL S2S launcher
+# Uses ElevenLabs TTS + faster-whisper large-v3 + Julia Brain (via proxy)
+# API keys: set env vars before running, never hardcoded
 export PATH=/root/miniconda3/bin:$PATH
 export HF_ENDPOINT=https://hf-mirror.com
-export OPENAI_API_KEY=sk-9c627df8575e4b44822aa8b0bea0f04c
+
+: "${OPENAI_API_KEY:?must be set}"
+: "${ELEVENLABS_API_KEY:?must be set}"
+: "${ELEVENLABS_VOICE_ID:?must be set}"
 
 fuser -k 8765/tcp 2>/dev/null
 sleep 2
@@ -12,7 +18,7 @@ nohup speech-to-speech \
   --stt faster-whisper \
   --faster_whisper_stt_model_name large-v3 \
   --faster_whisper_stt_gen_language zh \
-  --tts melo \
+  --tts elevenlabs \
   --llm_backend chat-completions \
   --responses_api_base_url http://127.0.0.1:8089/v1 \
   --model_name julia-brain \

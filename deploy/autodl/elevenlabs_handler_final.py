@@ -116,8 +116,8 @@ class ElevenLabsTTSHandler(BaseHandler[TTSIn, TTSOut]):
 
         except Exception as e:
             logger.error("ElevenLabs TTS failed: %s", e)
-            # P0-2: Even on error, yield AUDIO_RESPONSE_DONE to prevent stuck state
-            yield AUDIO_RESPONSE_DONE
+            # Sentence failed — no audio for this chunk.
+            # DONE is only yielded by EndOfResponse (one authoritative lifecycle close).
 
     def cleanup(self) -> None:
         if self._loop:
