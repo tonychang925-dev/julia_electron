@@ -6,7 +6,7 @@ import VoiceButton from './VoiceButton';
  * Voice mode: press-hold mic with audio level bar.
  * Text mode: keyboard input with send button.
  */
-export default function ChatInput({ onSend, onVoiceTranscript, sessionId, disabled }) {
+export default function ChatInput({ onSend, onVoiceTranscript, onAssistantTranscript, sessionId, disabled }) {
   const [text, setText] = useState('');
   const [voiceMode, setVoiceMode] = useState(false);
   const inputRef = useRef(null);
@@ -51,7 +51,7 @@ export default function ChatInput({ onSend, onVoiceTranscript, sessionId, disabl
       </div>
       <div style={styles.row}>
         {voiceMode ? (
-          <VoiceButton sessionId={sessionId} disabled={disabled} onTranscript={handleVoiceResult} onResponseText={onVoiceTranscript} />
+          <VoiceButton sessionId={sessionId} disabled={disabled} onTranscript={handleVoiceResult} onResponseText={onAssistantTranscript} />
         ) : (
           <>
             <input

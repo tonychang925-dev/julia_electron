@@ -68,6 +68,16 @@ const VoiceEngineClient = {
       this._ws.onopen = () => {
         this._setState('listening');
         log('VE_CONNECTED');
+        // P0-1: Declare audio contract — input 24kHz, output 24kHz
+        this._ws.send(JSON.stringify({
+          type: 'session.update',
+          session: {
+            input_audio_format: 'pcm16',
+            input_audio_rate: this._outputSampleRate,
+            output_audio_format: 'pcm16',
+            output_audio_rate: this._outputSampleRate,
+          },
+        }));
         this._startMicStream();
       };
 

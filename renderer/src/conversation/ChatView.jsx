@@ -121,10 +121,16 @@ export default function ChatView({ sessionId }) {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Voice transcript: display only. Gateway handles the chat.
+  // User voice transcript → add as user message
   const handleVoiceTranscript = useCallback((text) => {
     setMessages((prev) => [...prev, { role: 'user', text, source: 'voice' }]);
     if (activeSessionId) addMessage(activeSessionId, 'user', text);
+  }, [activeSessionId]);
+
+  // Julia voice reply → add as assistant message (P0-2 fix)
+  const handleAssistantTranscript = useCallback((text) => {
+    setMessages((prev) => [...prev, { role: 'assistant', text, source: 'voice' }]);
+    if (activeSessionId) addMessage(activeSessionId, 'assistant', text);
   }, [activeSessionId]);
 
   const handleSend = useCallback((text) => {
@@ -163,7 +169,7 @@ export default function ChatView({ sessionId }) {
         <div ref={messagesEnd} />
       </div>
       <RuntimeTimeline />
-      <ChatInput onSend={handleSend} onVoiceTranscript={handleVoiceTranscript} sessionId={activeSessionId} disabled={!online} />
+      <ChatInput onSend={handleSend} onVoiceTranscript={handleVoiceTranscript} onAssistantTranscript={handleAssistantTranscript} sessionId={activeSessionId} disabled={!online} />
     </div>
   );
 }
